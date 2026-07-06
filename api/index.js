@@ -1,35 +1,25 @@
-دconst express = require("express");
+const express = require("express");
+const serverless = require("serverless-http");
+const cors = require("cors");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
+
+// تفعيل CORS وحجم البيانات
+app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*'); 
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  next();
-});
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 app.post("/api", async (req, res) => {
   try {
-    console.log("1. الطلب وصل بنجاح");
-    
-    // فحص المفتاح
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) throw new Error("GEMINI_API_KEY غير موجود في الإعدادات!");
-    console.log("2. المفتاح موجود");
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    console.log("3. تم إنشاء نموذج Gemini");
-
     const { image } = req.body;
-    if (!image) throw new Error("لم يتم إرسال أي صورة");
-    console.log("4. الصورة موجودة");
+    if (!image) return res.status(400).json({ error: "لا توجد صورة مرسلة" });
     
+    // استخراج بيانات الصورة
     const base64Data = image.split(',')[1] || image;
+
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const result = await model.generateContent({
       contents: [{
@@ -41,17 +31,16 @@ app.post("/api", async (req, res) => {
       }]
     });
 
-    console.log("5. تم استلام الرد من Gemini");
     const responseText = result.response.text();
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("فشل في استخراج JSON من رد النموذج");
+    if (!jsonMatch) throw new Error("فشل تحويل رد Gemini إلى JSON");
 
-    res.json(JSON.parse(jsonMatch[0]));
+    return res.status(200).json(JSON.parse(jsonMatch[0]));
 
   } catch (err) {
-    console.error("خطأ حرج:", err.message);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: "Server Error: " + err.message });
   }
 });
 
-module.exports = app;
+// هذا هو الجزء الحيوي للـ Serverless
+module.exports = serverless(app);
