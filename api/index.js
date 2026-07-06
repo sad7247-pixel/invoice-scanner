@@ -1,4 +1,4 @@
-const express = require("express");
+دconst express = require("express");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
@@ -12,40 +12,45 @@ app.use((req, res, next) => {
   next();
 });
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
 app.post("/api", async (req, res) => {
   try {
-    const { image } = req.body;
-    if (!image) return res.status(400).json({ error: "لا توجد صورة" });
+    console.log("1. الطلب وصل بنجاح");
+    
+    // فحص المفتاح
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) throw new Error("GEMINI_API_KEY غير موجود في الإعدادات!");
+    console.log("2. المفتاح موجود");
 
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    console.log("3. تم إنشاء نموذج Gemini");
+
+    const { image } = req.body;
+    if (!image) throw new Error("لم يتم إرسال أي صورة");
+    console.log("4. الصورة موجودة");
+    
+    const base64Data = image.split(',')[1] || image;
 
     const result = await model.generateContent({
       contents: [{
         role: "user",
         parts: [
-          { inlineData: { mimeType: "image/jpeg", data: image.split(',')[1] || image } },
+          { inlineData: { mimeType: "image/jpeg", data: base64Data } },
           { text: "Extract details: id, customerName, customerPhone, customerAddress, orderDetails, customerNotes, orderPrice, deliveryPrice. Return JSON ONLY." }
         ]
       }]
     });
 
+    console.log("5. تم استلام الرد من Gemini");
     const responseText = result.response.text();
-    
-    // الحل الجذري: تنظيف النص بحيث نحصل على الـ JSON فقط
-    // هذا الكود يبحث عن أول { وآخر } ويستخرج ما بينهما
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-        throw new Error("لم يرجع Gemini تنسيق JSON صالح");
-    }
+    if (!jsonMatch) throw new Error("فشل في استخراج JSON من رد النموذج");
 
-    const cleanJson = jsonMatch[0];
-    res.json(JSON.parse(cleanJson));
+    res.json(JSON.parse(jsonMatch[0]));
 
   } catch (err) {
-    console.error("خطأ:", err);
-    res.status(500).json({ error: "خطأ في المعالجة: " + err.message });
+    console.error("خطأ حرج:", err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
